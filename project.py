@@ -1,6 +1,5 @@
 import cv2
 import numpy as np
-import sys
 from sklearn.decomposition import PCA
 
 PATCH_SIZE = 8
