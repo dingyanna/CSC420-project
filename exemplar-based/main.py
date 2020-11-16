@@ -21,7 +21,8 @@ def main(f, fill_front, region, k=9):
     W = f.shape[1] # width
     dw = int((k - 1) / 2)
     C = np.ones((H,W))
-    C[fill_front[0][0]:fill_front[1][1], fill_front[0][0]:fill_front[1][1]] = 0
+    for (i, j) in region:
+        C[i, j] = 0
     
     # Preprocess image
     f_gray = cv2.cvtColor(f, cv2.COLOR_RGB2GRAY)
@@ -65,9 +66,15 @@ def main(f, fill_front, region, k=9):
                 diff = 0
                 for u in range(-dw, dw+1):
                     for v in range(dw, dw+1):
+                        if (i+u, j+v) in region:
+                            break 
                         if (patch[0]+u) not in range(H) or (patch[1]+v) not in range(W):
-                            continue
+                            continue 
                         diff += np.sum((f[i+u, j+v] - f[patch[0]+u, patch[1]+v]) ** 2)
+                    if (i+u, j+v) in region:
+                        break
+                if (i+u, j+v) in region:
+                    continue
                 if diff < min_diff:
                     source_patch = (i, j)
                     min_diff = diff
@@ -88,7 +95,7 @@ def main(f, fill_front, region, k=9):
         fill_front.remove(patch)
         # Update fill_front if possible
         if len(fill_front) == 0 and count < len(region):
-            fill_front = []
+            fill_front = [] # hardcoded for 10 x 10 image
             fill_front_cp = fill_front.copy()
                 
     return f
@@ -96,14 +103,21 @@ def main(f, fill_front, region, k=9):
 
 
 if __name__ == '__main__':
-    f = cv2.imread('../images/test.jpg')
+    f = cv2.imread('../images/test1.jpg')
     # f_cle = cv2.cvtColor(f, f, cv2.CV_RGB2Lab)
     # print(f_cle.shape)
     region = {}
-    for i in range(7, 10):
-        for j in range(7, 10):
+    for i in range(1, 4):
+        for j in range(1, 4):
             region[(i,j)] = 0
-    fill_front = [(7, 7), (8,7), (9,7), (9,8), (9, 9), (8, 9), (7, 9)]
+    fill_front = []
+    for i in range(3):
+        fill_front += [
+            (0, i+1),
+            (i, 1),
+            (2, i+1),
+            (i, 3)
+        ]
     f_inpainted = main(f, fill_front, region, 3)
-    plt.imsave('../results/test.png', cv2.cvtColor(f_inpainted, cv2.COLOR_BGR2RGB))
+    plt.imsave('../results/test1.png', cv2.cvtColor(f_inpainted, cv2.COLOR_BGR2RGB))
     
