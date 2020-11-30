@@ -6,9 +6,7 @@ import graphcut
 import matplotlib.pyplot as plt
 
 PATCH_SIZE = 8
-TAU = 0
 KERNEL_SIZE = 9
-
 
 def GetOffsets2(patches, indices):
     print("build kdtree")
