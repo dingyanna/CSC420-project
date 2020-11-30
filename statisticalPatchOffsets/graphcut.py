@@ -6,7 +6,7 @@ def getdictid(lst):
     return str(lst[0]) + "," + str(lst[1])
 
 #labels: [[u1, v1], [u2, v2], ...]
-def graphcut(image, mask, labels, boundingBox):
+def graphcut(image, mask, labels):
     rows, cols = np.where(mask != 0)
     #sites: [[row1, col1], [row2, col2], ...]
     sites = [[i, j] for (i, j) in zip(rows, cols)]

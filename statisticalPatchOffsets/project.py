@@ -6,11 +6,10 @@ import graphcut
 import matplotlib.pyplot as plt
 
 PATCH_SIZE = 8
-TAU = 0
-KERNEL_SIZE = 9
+KERNEL_SIZE = 19
 
 
-def GetOffsets2(patches, indices):
+def GetOffsets2(patches, indices, TAU):
     print("build kdtree")
     kd = KDTree(patches, leaf_size=24)
     #flann = FLANN()
@@ -27,9 +26,8 @@ def GetOffsets2(patches, indices):
         found = False
         for j in range(len(idxs[0])):
             nearest = idxs[0][j]
-            #nearest = idxs[i][-1]
             offset = [indices[nearest][0] - indices[i][0], indices[nearest][1] - indices[i][1]]
-            if offset[0]**2 + offset[1]**2 >= cfg.TAU**2:
+            if offset[0]**2 + offset[1]**2 >= TAU**2:
                 offsets[i] = offset
                 found = True
                 #print("offset: ", offset)
@@ -38,12 +36,23 @@ def GetOffsets2(patches, indices):
             nearest = idxs[0][0]
             offsets[i] = [indices[nearest][0] - indices[i][0], indices[nearest][1] - indices[i][1]]
             print("offset not found")
-    print("getoffsets2 done")
+    print("getoffsets2 done", np.array(offsets).shape)
     return offsets
 
 
+def ScatterPlot3D(x, y, z, domain):
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(y, x, z)
+    ax.set_xlabel('u')
+    ax.set_ylabel('v')
+    ax.set_zlabel('frequency')
+    ax.set_xlim([-domain[0], domain[0]])
+    ax.set_ylim([-domain[1], domain[1]])
+    plt.show()
+
+
 def GetKDominantOffsets(offsets, K, height, width):
-    start = time()
     x, y = [offset[0] for offset in offsets if offset != None], [offset[1] for offset in offsets if offset != None]
     bins = [[i for i in range(np.min(x),np.max(x))], [i for i in range(np.min(y),np.max(y))]]
     hist, xedges, yedges = np.histogram2d(x, y, bins=bins)
@@ -51,12 +60,12 @@ def GetKDominantOffsets(offsets, K, height, width):
     p, q = np.where(hist != 0)
     peakOffsets, freq = [[xedges[i], yedges[j]] for (i, j) in zip(p, q)], hist[p, q].flatten()
     peakOffsets = np.array(peakOffsets)
-    print(np.array(peakOffsets).shape, np.array(freq).shape)
-    plot.ScatterPlot3D(peakOffsets[:,0], peakOffsets[:,1], freq, [height, width])
+    print(np.array(peakOffsets).shape, np.array(freq).shape, len(x))
+    ScatterPlot3D(peakOffsets[:,0], peakOffsets[:,1], freq, [height, width])
 
     hist = hist.T
-    hist = cv2.GaussianBlur(hist, KERNEL_SIZE, np.sqrt(2))
-    #plot.PlotHistogram2D(hist, xedges, yedges)
+    hist = cv2.GaussianBlur(hist, (KERNEL_SIZE,KERNEL_SIZE), np.sqrt(2))
+    #plt.PlotHistogram2D(hist, xedges, yedges)
     #p, q = np.where(hist == cv2.dilate(hist, np.ones(8))) # Non Maximal Suppression
     nonMaxSuppressedHist = np.zeros(hist.shape)
     #nonMaxSuppressedHist[p, q] = hist[p, q]
@@ -82,30 +91,20 @@ def GetKDominantOffsets(offsets, K, height, width):
     #plot.PlotHistogram2D(peakHist, xedges, yedges)
     peakOffsets, freq = [[xedges[j], yedges[i]] for (i, j) in zip(p, q)], nonMaxSuppressedHist[p, q].flatten()
     peakOffsets = np.array([x for _, x in sorted(zip(freq, peakOffsets), reverse=True)], dtype="int64")[:2*K]
-    end = time()
+
     print("peakOffsets shape:", peakOffsets.shape, "freq shape: ", freq.shape, "p, q shape:", p.shape, q.shape)
-    plot.ScatterPlot3D(peakOffsets[:,0], peakOffsets[:,1], freq, [height, width])
-    print("GetKDominantOffsets execution time: ", end - start)
+    ScatterPlot3D(peakOffsets[:,0], peakOffsets[:,1], freq, [height, width])
     return peakOffsets
 
 
-def ScatterPlot3D(x, y, z, domain):
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    ax.scatter(y, x, z)
-    ax.set_xlabel('u')
-    ax.set_ylabel('v')
-    ax.set_zlabel('frequency')
-    ax.set_xlim([-domain[0], domain[0]])
-    ax.set_ylim([-domain[1], domain[1]])
-    plt.show()
-
 
 # I consulted with https://github.com/Pranshu258/Image_Completion/
-def patch(imagefile, mask):
+def patch(imagefile, maskfile):
     # read in image
     image = cv2.imread(imagefile, cv2.IMREAD_GRAYSCALE)
     image2 = cv2.imread(imagefile)
+
+    mask = cv2.imread(maskfile, cv2.IMREAD_GRAYSCALE)
 
     # get bounding box of the hole
     validPoints = np.where(mask != 0)
@@ -130,20 +129,21 @@ def patch(imagefile, mask):
 
     # get patches within search boundary
     indices, patches = [], []
-    rows, cols, _ = image.shape
+    rows, cols = image.shape
     for i in range(minRow, maxRow - PATCH_SIZE, PATCH_SIZE // 2):
         for j in range(minCol, maxCol - PATCH_SIZE, PATCH_SIZE // 2):
-            if i not in range(boundary[0] - PATCH_SIZE, boundary[1]) and j not in range(
+            if i not in range(boundary[0] - PATCH_SIZE, boundary[1]) or j not in range(
                     boundary[2] - PATCH_SIZE, boundary[3]):
                 indices.append([i + PATCH_SIZE // 2, j + PATCH_SIZE // 2])
-                patches.append(image[i:i + PATCH_SIZE, j:j + PATCH_SIZE].flatten())
+                patches.append(image2[i:i + PATCH_SIZE, j:j + PATCH_SIZE].flatten())
 
+    print(len(patches))
     # get offsets
-    offsets = GetOffsets2(patches, indices)
+    offsets = GetOffsets2(np.array(patches), indices, TAU)
     # get k dominant offsets by using 2d histogram
     kDominantOffset = GetKDominantOffsets(offsets, 90, maxRow - minRow, maxCol - minCol)
     # optimize the energy function by graph cuts
-    sites, optimalLabels = graphcut.graphcut(image2, mask, kDominantOffset, sd)
+    sites, optimalLabels = graphcut.graphcut(image2, mask, kDominantOffset)
     # use optimal points to fill the hole
     finalImg = image2
     for i in range(len(sites)):
