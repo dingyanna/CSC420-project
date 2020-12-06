@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 PATCH_SIZE = 8
 KERNEL_SIZE = 9
 
+
 def GetOffsets2(patches, indices):
     print("build kdtree")
     kd = KDTree(patches, leaf_size=24)
@@ -27,7 +28,7 @@ def GetOffsets2(patches, indices):
             nearest = idxs[0][j]
             #nearest = idxs[i][-1]
             offset = [indices[nearest][0] - indices[i][0], indices[nearest][1] - indices[i][1]]
-            if offset[0]**2 + offset[1]**2 >= cfg.TAU**2:
+            if offset[0]**2 + offset[1]**2 >= TAU**2:
                 offsets[i] = offset
                 found = True
                 #print("offset: ", offset)
