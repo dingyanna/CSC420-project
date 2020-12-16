@@ -76,6 +76,7 @@ def Matchingsimilarpatches2(img, mask, TAU):
     for i in range(len(kp1_SIFT)):
         x = int(kp1_SIFT[i].pt[0])
         y = int(kp1_SIFT[i].pt[1])
+        print(x, y)
         if mask[y][x] != 0:
             continue
         patches.append(desc1_SIFT[i])
@@ -182,9 +183,11 @@ def patch(imagefile, maskfile, sift):
     print(len(patches))
     # step 1: Matching similar patches
     if sift:
-        offsets = Matchingsimilarpatches2(img, mask, TAU)
+        print("this thread uses my version of the algorithm")
+        offsets = Matchingsimilarpatches2(image, mask, TAU)
     else:
-        offsets = Matchingsimilarpatches2(np.array(patches), indices, TAU)
+        print("this thread uses the original algorithm")
+        offsets = Matchingsimilarpatches(np.array(patches), indices, TAU)
 
     # step 2: Finding dominant offsets.
     kDominantOffset = Findingdominantoffsets(offsets, 90, maxRow - minRow, maxCol - minCol)
@@ -204,7 +207,10 @@ def patch(imagefile, maskfile, sift):
 
 
 if __name__ == "__main__":
-    if sys.argv[1] == "" and sys.argv[2] == "":
-        print("for original version of the algorithm, python project.py [imagefile] [maskfile] -o; for sift-based version, python\
-              project.py [imagefile] [maskfile] -s")
-    patch(sys.argv[1], sys.argv[2])
+    if len(sys.argv) == 1:
+        print("for original version of the algorithm, python project.py [imagefile] [maskfile] -o; for sift-based version, python project.py [imagefile] [maskfile] -s")
+        exit(1) 
+    if sys.argv[3] == "-o":
+        patch(sys.argv[1], sys.argv[2], False)
+    else:
+        patch(sys.argv[1], sys.argv[2], True)
