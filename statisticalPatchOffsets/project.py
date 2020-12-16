@@ -66,8 +66,21 @@ def Matchingsimilarpatches(patches, indices, TAU):
             nearest = idxs[0][0]
             offsets[i] = [indices[nearest][0] - indices[i][0], indices[nearest][1] - indices[i][1]]
             print("offset not found")
-    print("gMatchingsimilarpatches done", np.array(offsets).shape)
+    print("Matchingsimilarpatches done", np.array(offsets).shape)
     return offsets
+
+def Matchingsimilarpatches2(img, mask, TAU):
+    sift = cv2.xfeatures2d.SIFT_create()
+    kp1_SIFT, desc1_SIFT = sift.detectAndCompute(img, None)
+    patches, indices = [], []
+    for i in range(len(kp1_SIFT)):
+        x = int(kp1_SIFT[i].pt[0])
+        y = int(kp1_SIFT[i].pt[1])
+        if mask[y][x] != 0:
+            continue
+        patches.append(desc1_SIFT[i])
+        indices.append([y, x])
+    return Matchingsimilarpatches(patches, indices, TAU)
 
 def Findingdominantoffsets(offsets, K, height, width):
     #Given all the offsets s(x), we compute their statistics by a 2-d histogram h(u; v):
@@ -127,7 +140,7 @@ def Findingdominantoffsets(offsets, K, height, width):
     plt.show()
     return peaks
 
-def patch(imagefile, maskfile):
+def patch(imagefile, maskfile, sift):
     # read in image
     image = cv2.imread(imagefile, cv2.IMREAD_GRAYSCALE)
     image2 = cv2.imread(imagefile)
@@ -168,7 +181,10 @@ def patch(imagefile, maskfile):
 
     print(len(patches))
     # step 1: Matching similar patches
-    offsets = Matchingsimilarpatches(np.array(patches), indices, TAU)
+    if sift:
+        offsets = Matchingsimilarpatches2(img, mask, TAU)
+    else:
+        offsets = Matchingsimilarpatches2(np.array(patches), indices, TAU)
 
     # step 2: Finding dominant offsets.
     kDominantOffset = Findingdominantoffsets(offsets, 90, maxRow - minRow, maxCol - minCol)
@@ -188,4 +204,7 @@ def patch(imagefile, maskfile):
 
 
 if __name__ == "__main__":
+    if sys.argv[1] == "" and sys.argv[2] == "":
+        print("for original version of the algorithm, python project.py [imagefile] [maskfile] -o; for sift-based version, python\
+              project.py [imagefile] [maskfile] -s")
     patch(sys.argv[1], sys.argv[2])
