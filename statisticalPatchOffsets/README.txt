@@ -6,5 +6,8 @@ Apart from these, I used the common libraries like numpy, matplotlib, sklearn, o
 
 In order to run my code, 
      python3 project.py ./images2/Brick.jpg ./images2/Brick.png [-o | -s]
--o means that the original algorithm is used, -s means that my version, the one 
-using sift code will be used.  
+-o means that the original algorithm is used, 
+-s means that my version, the one using sift code will be used. 
+
+after running, the produced image will be named Brick.jpg-filled.png
+and saved into the same directory as the source image
