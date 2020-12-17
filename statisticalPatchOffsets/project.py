@@ -8,7 +8,9 @@ import matplotlib.pyplot as plt
 # parameters to set the size of each patch
 PATCH_SIZE = 8
 # the kernel size of the gaussian blurring.
-KERNEL_SIZE = 9
+KERNEL_SIZE = 19
+# the number of dominant offsets to take from a set of offsets
+KOFFSETS = 90
 
 
 """
@@ -38,7 +40,7 @@ committer:    Peizhi ZHang
    
 """
 
-
+# step 1: Matching similar patches
 def Matchingsimilarpatches(patches, indices, TAU):
     print("build kdtree")
     kd = KDTree(patches, leaf_size=24)
@@ -69,6 +71,7 @@ def Matchingsimilarpatches(patches, indices, TAU):
     print("Matchingsimilarpatches done", np.array(offsets).shape)
     return offsets
 
+# step 1: Matching similar patches (sift version)
 def Matchingsimilarpatches2(img, mask, TAU):
     sift = cv2.xfeatures2d.SIFT_create()
     kp1_SIFT, desc1_SIFT = sift.detectAndCompute(img, None)
@@ -83,6 +86,8 @@ def Matchingsimilarpatches2(img, mask, TAU):
         indices.append([y, x])
     return Matchingsimilarpatches(patches, indices, TAU)
 
+
+# step 2: Finding dominant offsets.
 def Findingdominantoffsets(offsets, K, height, width):
     #Given all the offsets s(x), we compute their statistics by a 2-d histogram h(u; v):
     rows, cols = [], []
@@ -141,6 +146,8 @@ def Findingdominantoffsets(offsets, K, height, width):
     plt.show()
     return peaks
 
+
+# main function
 def patch(imagefile, maskfile, sift):
     # read in image
     image = cv2.imread(imagefile, cv2.IMREAD_GRAYSCALE)
@@ -190,7 +197,7 @@ def patch(imagefile, maskfile, sift):
         offsets = Matchingsimilarpatches(np.array(patches), indices, TAU)
 
     # step 2: Finding dominant offsets.
-    kDominantOffset = Findingdominantoffsets(offsets, 90, maxRow - minRow, maxCol - minCol)
+    kDominantOffset = Findingdominantoffsets(offsets, KOFFSETS, maxRow - minRow, maxCol - minCol)
 
     # step 3: Combining Shifted Images via Optimization
     sites, bestLabals = graphcut.graphcut(image2, mask, kDominantOffset)
