@@ -79,12 +79,11 @@ def Matchingsimilarpatches2(img, mask, TAU):
     for i in range(len(kp1_SIFT)):
         x = int(kp1_SIFT[i].pt[0])
         y = int(kp1_SIFT[i].pt[1])
-        print(x, y)
         if mask[y][x] != 0:
             continue
         patches.append(desc1_SIFT[i])
         indices.append([y, x])
-    return Matchingsimilarpatches(patches, indices, TAU)
+    return Matchingsimilarpatches(np.array(patches), indices, TAU)
 
 
 # step 2: Finding dominant offsets.
