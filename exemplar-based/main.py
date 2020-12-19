@@ -37,11 +37,12 @@ def detect_fill_front(mask):
     return fill_front.tolist()
 
 def update_image_statistics(f, mask):
-    f_gray = cv2.cvtColor(f, cv2.COLOR_BGR2GRAY)
     if len(f.shape) == 2:
-        f_color = f_gray
+        f_color = f
+        f_gray = f
     else:
         f_color = cv2.cvtColor(f, cv2.COLOR_BGR2LAB)
+        f_gray = cv2.cvtColor(f, cv2.COLOR_BGR2GRAY)
     f_x = cv2.Sobel(f_gray, cv2.CV_64F, 1, 0)
     f_y = cv2.Sobel(f_gray, cv2.CV_64F, 0, 1)
     mask_x = cv2.Sobel(mask, cv2.CV_64F, 1, 0)
