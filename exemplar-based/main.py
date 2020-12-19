@@ -111,7 +111,6 @@ def main(f, mask, k=9):
         # Propogate 
         min_diff = float('inf')
         source = None
-        masked = mask[patch[0]-dw:patch[0]+dw+1, patch[1]-dw:patch[1]+dw+1] 
         for i in range(dw, H-dw):
             for j in range(dw, W-dw):
                 if mask[i-dw:i+dw+1, j-dw:j+dw+1].sum() > 0:
@@ -125,6 +124,7 @@ def main(f, mask, k=9):
                 diff = f_color[lbs[0]:ubs[0], lbs[1]:ubs[1]] - \
                         f_color[lbs[2]:ubs[2], lbs[3]:ubs[3]]
 
+                masked = mask[lbs[2]:ubs[2], lbs[3]:ubs[3]] 
                 diff = diff[masked == 0] # only consider difference in non-filled pixels
                 diff = np.square(diff).sum()
                 if diff < min_diff:
