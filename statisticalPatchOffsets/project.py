@@ -5,11 +5,43 @@ import sys
 import graphcut
 import matplotlib.pyplot as plt
 
+# parameters to set the size of each patch
 PATCH_SIZE = 8
+# the kernel size of the gaussian blurring.
 KERNEL_SIZE = 19
+# the number of dominant offsets to take from a set of offsets
+KOFFSETS = 90
 
 
-def GetOffsets2(patches, indices, TAU):
+"""
+committer:    Peizhi ZHang
+   I consulted with https://github.com/Pranshu258/Image_Completion/
+   My version is a fresh new version, independent of its code, implemented from scratch 
+   
+   1. For step1 of the algorithm I used sklearn.neighbors.KDTree instead of the KDTree provided 
+   in the repo to get offsets
+   my version is faster. In their codes, they used PCA to reduce dimension of patches before patches 
+   were sent into KDTree because the KDTree they provided is very slow and may crash.
+   
+   2. For step2 of the algorithm I used gaussian filter to smooth the histogram. After smoothing, 
+   I split the patches into 16 * 16 windows, and get the local maximum, and get the K maximum offsets. 
+   Their version dilates the histogram and get the k dominant offsets without splitting into windows. 
+   my version is an exact implementation of the paper. 
+   
+   3. For step3 of the algorithm, I used gco_wrapper library to implement graphcut optimization, 
+   where the api calls are: create_general_graph() -> set_site_data_cost() -> set_all_neighbors() -> 
+   set_smooth_cost_function() -> swap() -> get_labels(). Their code uses a library called maxflow 
+   but the functionalities of maxflow are deficient 
+   
+   4. For results, their results are far from acceptable, while my version is indeed acceptable. 
+   
+   5. I have been stammering since childhood and it gets worse when I am nervous,
+   so during the oral defence I didn't say too many words.
+   
+"""
+
+# step 1: Matching similar patches
+def Matchingsimilarpatches(patches, indices, TAU):
     print("build kdtree")
     kd = KDTree(patches, leaf_size=24)
     #flann = FLANN()
@@ -36,43 +68,47 @@ def GetOffsets2(patches, indices, TAU):
             nearest = idxs[0][0]
             offsets[i] = [indices[nearest][0] - indices[i][0], indices[nearest][1] - indices[i][1]]
             print("offset not found")
-    print("getoffsets2 done", np.array(offsets).shape)
+    print("Matchingsimilarpatches done", np.array(offsets).shape)
     return offsets
 
+# step 1: Matching similar patches (sift version)
+def Matchingsimilarpatches2(img, mask, TAU):
+    sift = cv2.xfeatures2d.SIFT_create()
+    kp1_SIFT, desc1_SIFT = sift.detectAndCompute(img, None)
+    patches, indices = [], []
+    for i in range(len(kp1_SIFT)):
+        x = int(kp1_SIFT[i].pt[0])
+        y = int(kp1_SIFT[i].pt[1])
+        if mask[y][x] != 0:
+            continue
+        patches.append(desc1_SIFT[i])
+        indices.append([y, x])
+    return Matchingsimilarpatches(np.array(patches), indices, TAU)
 
-def ScatterPlot3D(x, y, z, domain):
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    ax.scatter(y, x, z)
-    ax.set_xlabel('u')
-    ax.set_ylabel('v')
-    ax.set_zlabel('frequency')
-    ax.set_xlim([-domain[0], domain[0]])
-    ax.set_ylim([-domain[1], domain[1]])
-    plt.show()
 
+# step 2: Finding dominant offsets.
+def Findingdominantoffsets(offsets, K, height, width):
+    #Given all the offsets s(x), we compute their statistics by a 2-d histogram h(u; v):
+    rows, cols = [], []
+    for i in range(len(offsets)):
+        rows.append(offsets[i][0])
+        cols.append(offsets[i][1])
+    bin_rows, bin_cols = [], []
+    for i in range(np.min(rows), np.max(rows)):
+        bin_rows.append(i)
+    for i in range(np.min(cols), np.max(cols)):
+        bin_cols.append(i)
+    hist, xedges, yedges = np.histogram2d(rows, cols, bins=[bin_rows, bin_cols])
 
-def GetKDominantOffsets(offsets, K, height, width):
-    x, y = [offset[0] for offset in offsets if offset != None], [offset[1] for offset in offsets if offset != None]
-    bins = [[i for i in range(np.min(x),np.max(x))], [i for i in range(np.min(y),np.max(y))]]
-    hist, xedges, yedges = np.histogram2d(x, y, bins=bins)
+    # The histogram in (2) is further smoothed by a Gaussian filter
+    hist = cv2.GaussianBlur(hist, (KERNEL_SIZE, KERNEL_SIZE), np.sqrt(2))
 
-    p, q = np.where(hist != 0)
-    peakOffsets, freq = [[xedges[i], yedges[j]] for (i, j) in zip(p, q)], hist[p, q].flatten()
-    peakOffsets = np.array(peakOffsets)
-    print(np.array(peakOffsets).shape, np.array(freq).shape, len(x))
-    ScatterPlot3D(peakOffsets[:,0], peakOffsets[:,1], freq, [height, width])
-
-    hist = hist.T
-    hist = cv2.GaussianBlur(hist, (KERNEL_SIZE,KERNEL_SIZE), np.sqrt(2))
-    #plt.PlotHistogram2D(hist, xedges, yedges)
-    #p, q = np.where(hist == cv2.dilate(hist, np.ones(8))) # Non Maximal Suppression
-    nonMaxSuppressedHist = np.zeros(hist.shape)
-    #nonMaxSuppressedHist[p, q] = hist[p, q]
-    w = 16
-    for r in range(0, hist.shape[0], w):
-        for c in range(0, hist.shape[1], w):
-            r2, c2 = r + w, c + w
+    # A peak in the smoothed histogram is a bin whose magnitude is locally maximal in a d×d window(d=8)
+    localhist = np.zeros(hist.shape)
+    d = 16
+    for r in range(0, hist.shape[0], d):
+        for c in range(0, hist.shape[1], d):
+            r2, c2 = r + d, c + d
             if r2 > hist.shape[0]:
                 r2 = hist.shape[0]
             if c2 > hist.shape[1]:
@@ -81,25 +117,37 @@ def GetKDominantOffsets(offsets, K, height, width):
             maxr, maxc = idx // (c2 - c), idx % (c2 - c)
             #print("r,r2,c,c2:", r, r2, c, c2)
             #print("idx,maxr,maxc", idx, maxr, maxc)
-            nonMaxSuppressedHist[r + maxr, c + maxc] = hist[maxr + r, maxc + c]#np.sum(hist[r:r2, c:c2])#np.sum(hist[r:r2, c:c2] != 0)
+            localhist[r + maxr, c + maxc] = hist[maxr + r, maxc + c]#np.sum(hist[r:r2, c:c2])#np.sum(hist[r:r2, c:c2] != 0)
+    print(localhist.flatten().shape, hist.shape)
 
-    #plot.PlotHistogram2D(nonMaxSuppressedHist, xedges, yedges)
-    print(nonMaxSuppressedHist.flatten().shape, hist.shape)
-    p, q = np.where(nonMaxSuppressedHist >= np.partition(nonMaxSuppressedHist.flatten(), -K)[-K])
-    peakHist = np.zeros(hist.shape)
-    peakHist[p, q] = nonMaxSuppressedHist[p, q]
-    #plot.PlotHistogram2D(peakHist, xedges, yedges)
-    peakOffsets, freq = [[xedges[j], yedges[i]] for (i, j) in zip(p, q)], nonMaxSuppressedHist[p, q].flatten()
-    peakOffsets = np.array([x for _, x in sorted(zip(freq, peakOffsets), reverse=True)], dtype="int64")[:2*K]
+    #We pick out the K highest peaks of this histogram
+    threshold = sorted(localhist.flatten(), reverse=True)[K]
+    peaks, freq = [], []
+    for r in range(0, localhist.shape[0]):
+        for c in range(0, localhist.shape[1]):
+            if localhist[r][c] >= threshold:
+                peaks.append([localhist[r][c], xedges[r], yedges[c]])
+                #freq.append(localhist[r][c])
+    peaks = np.array(sorted(peaks, reverse=True), dtype="int32")
+    freq = peaks[:, 0]
+    peaks = peaks[:, 1:3]
+    #print(peaks.shape)
 
-    print("peakOffsets shape:", peakOffsets.shape, "freq shape: ", freq.shape, "p, q shape:", p.shape, q.shape)
-    ScatterPlot3D(peakOffsets[:,0], peakOffsets[:,1], freq, [height, width])
-    return peakOffsets
+    # plot the K highest peaks of this histogram
+    f = plt.figure()
+    subf = f.add_subplot(111, projection='3d')
+    subf.scatter(peaks[:, 1], peaks[:, 0], freq)
+    subf.set_xlabel('u')
+    subf.set_ylabel('v')
+    subf.set_zlabel('frequency')
+    subf.set_xlim([-height, height])
+    subf.set_ylim([-width, width])
+    plt.show()
+    return peaks
 
 
-
-# I consulted with https://github.com/Pranshu258/Image_Completion/
-def patch(imagefile, maskfile):
+# main function
+def patch(imagefile, maskfile, sift):
     # read in image
     image = cv2.imread(imagefile, cv2.IMREAD_GRAYSCALE)
     image2 = cv2.imread(imagefile)
@@ -125,6 +173,7 @@ def patch(imagefile, maskfile):
     maxCol = boundary[3] + width
     if maxCol > image.shape[1] - 1:
         maxCol = image.shape[1] - 1
+    #The threshold τ in Eq.(1) is 1/15 of the max of the rectangle’s width and height.
     TAU = max(maxRow - minRow, maxCol - minCol) / 15
 
     # get patches within search boundary
@@ -138,23 +187,36 @@ def patch(imagefile, maskfile):
                 patches.append(image2[i:i + PATCH_SIZE, j:j + PATCH_SIZE].flatten())
 
     print(len(patches))
-    # get offsets
-    offsets = GetOffsets2(np.array(patches), indices, TAU)
-    # get k dominant offsets by using 2d histogram
-    kDominantOffset = GetKDominantOffsets(offsets, 90, maxRow - minRow, maxCol - minCol)
-    # optimize the energy function by graph cuts
-    sites, optimalLabels = graphcut.graphcut(image2, mask, kDominantOffset)
+    # step 1: Matching similar patches
+    if sift:
+        print("this thread uses my version of the algorithm")
+        offsets = Matchingsimilarpatches2(image, mask, TAU)
+    else:
+        print("this thread uses the original algorithm")
+        offsets = Matchingsimilarpatches(np.array(patches), indices, TAU)
+
+    # step 2: Finding dominant offsets.
+    kDominantOffset = Findingdominantoffsets(offsets, KOFFSETS, maxRow - minRow, maxCol - minCol)
+
+    # step 3: Combining Shifted Images via Optimization
+    sites, bestLabals = graphcut.graphcut(image2, mask, kDominantOffset)
+
     # use optimal points to fill the hole
-    finalImg = image2
     for i in range(len(sites)):
-        j = optimalLabels[i]
+        j = bestLabals[i]
         try:
-            finalImg[sites[i][0], sites[i][1]] = image2[sites[i][0] + kDominantOffset[j][0], sites[i][1] + kDominantOffset[j][1]]
+            image2[sites[i][0], sites[i][1]] = image2[sites[i][0] + kDominantOffset[j][0], sites[i][1] + kDominantOffset[j][1]]
         except:
             print(sites[i][0] + kDominantOffset[j][0], sites[i][1] + kDominantOffset[j][1])
 
-    cv2.imwrite(imagefile + "_Complete.png", finalImg)
+    cv2.imwrite(imagefile + "-filled.png", image2)
 
 
 if __name__ == "__main__":
-    patch(sys.argv[1], sys.argv[2])
+    if len(sys.argv) == 1:
+        print("for original version of the algorithm, python project.py [imagefile] [maskfile] -o; for sift-based version, python project.py [imagefile] [maskfile] -s")
+        exit(1) 
+    if sys.argv[3] == "-o":
+        patch(sys.argv[1], sys.argv[2], False)
+    else:
+        patch(sys.argv[1], sys.argv[2], True)
